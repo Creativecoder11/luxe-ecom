@@ -5,13 +5,19 @@ import { Suspense } from "react";
 import { ListingSkeleton } from "@/components/storefront/listing-skeleton";
 import { ListingView } from "@/components/storefront/listing-view";
 import { parseListingParams } from "@/modules/catalog/listing-params";
-import { getStorefrontListing } from "@/modules/catalog/storefront";
+import { getSitemapEntries, getStorefrontListing } from "@/modules/catalog/storefront";
 
 /**
- * Per-request route (no generateStaticParams): data is cached with "use cache" and products published
- * after the build work immediately. Unknown slugs render the noindex not-found page (D-020).
+ * Known categories are prerendered at build and served from the CDN (ISR); catalog edits expire them via
+ * CATALOG_TAG. Categories added after the build render on first visit, then stay cached.
+ * Unknown slugs render the noindex not-found page (D-020).
  */
 export const instant = false;
+
+export async function generateStaticParams() {
+  const { categories } = await getSitemapEntries();
+  return categories.length ? categories.map((slug) => ({ slug })) : [{ slug: "__none__" }];
+}
 
 
 export async function generateMetadata({ params }: PageProps<"/categories/[slug]">): Promise<Metadata> {

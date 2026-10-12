@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import Image from "next/image";
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { VariantPicker } from "@/components/storefront/variant-picker";
 import { Skeleton } from "@/components/ui/display";
@@ -10,15 +11,22 @@ import { siteConfig } from "@/config/site";
 import { mediaUrl } from "@/lib/media";
 import { getBusinessId } from "@/modules/business/context";
 import { isWishlisted } from "@/modules/cart/wishlist.service";
-import { getNewestProducts, getStorefrontProduct, type StorefrontProduct } from "@/modules/catalog/storefront";
+import { getNewestProducts, getSitemapEntries, getStorefrontProduct, type StorefrontProduct } from "@/modules/catalog/storefront";
 import { getCustomerUser } from "@/modules/identity/session";
 import { getVariantStock } from "@/modules/inventory/storefront-stock";
 
 /**
- * Per-request route (no generateStaticParams): data is cached with "use cache" and products published
- * after the build work immediately. Unknown slugs render the noindex not-found page (D-020).
+ * Known products are prerendered at build and served from the CDN (ISR); catalog edits expire them via
+ * CATALOG_TAG. Products added after the build render on first visit, then stay cached.
+ * Unknown slugs render the noindex not-found page (D-020).
  */
 export const instant = false;
+
+/** Newest 500 products at build; the rest are rendered on first request. */
+export async function generateStaticParams() {
+  const { products } = await getSitemapEntries();
+  return products.length ? products.slice(0, 500).map((p) => ({ slug: p.slug })) : [{ slug: "__none__" }];
+}
 
 
 export async function generateMetadata({ params }: PageProps<"/products/[slug]">): Promise<Metadata> {
@@ -113,15 +121,16 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
           <div className="grid min-w-0 gap-3 self-start">
             {product.media.length ? (
               product.media.map((m, i) => (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   key={m.key}
                   src={mediaUrl(m.key)}
                   alt={m.alt ?? product.title}
-                  width={m.width ?? undefined}
-                  height={m.height ?? undefined}
+                  width={m.width ?? 1200}
+                  height={m.height ?? 1200}
+                  sizes="(min-width: 1024px) 50vw, 100vw"
                   loading={i === 0 ? "eager" : "lazy"}
-                  className="w-full rounded-xl bg-surface-muted object-cover"
+                  fetchPriority={i === 0 ? "high" : undefined}
+                  className="h-auto w-full rounded-xl bg-surface-muted object-cover"
                 />
               ))
             ) : (

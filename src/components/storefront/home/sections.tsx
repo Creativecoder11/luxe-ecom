@@ -1,6 +1,7 @@
 import { ArrowRight, Star } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import Image from "next/image";
 import { formatMoney } from "@/lib/money";
 import { mediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils/cn";
@@ -71,7 +72,7 @@ export function PromoCards({ banners }: { banners: ResolvedBanner[] }) {
     <section aria-label="Collections" className="grid grid-cols-1 gap-1.5 px-1.5 pb-1.5 sm:grid-cols-2 lg:grid-cols-4">
       {banners.map((b, i) => (
         <BannerLink key={i} banner={b} className="group relative isolate flex aspect-[1.83] items-center overflow-hidden rounded-[0.625rem]">
-          <ContentImage imageKey={b.imageKey} alt={b.imageAlt} index={i + 2} className="-z-10 transition-transform duration-700 group-hover:scale-[1.04]" />
+          <ContentImage imageKey={b.imageKey} alt={b.imageAlt} index={i + 2} sizes="(min-width: 1024px) 25vw, 50vw" className="-z-10 transition-transform duration-700 group-hover:scale-[1.04]" />
           <div className="absolute inset-0 -z-10 bg-gradient-to-r from-black/45 to-transparent" />
           <div className="max-w-[16rem] p-6 text-white sm:p-9">
             <h2 className="font-display text-2xl font-semibold tracking-[-0.02em]">{b.title}</h2>
@@ -128,7 +129,7 @@ export function BannerSlider({ banners }: { banners: ResolvedBanner[] }) {
         {banners.map((b, i) => (
           <li key={i} className="w-[85%] shrink-0 snap-center md:w-[60%]">
             <BannerLink banner={b} className="group relative isolate flex aspect-[4/3] items-end overflow-hidden rounded-xl sm:aspect-[856/493]">
-              <ContentImage imageKey={b.imageKey} alt={b.imageAlt} index={i + 1} className="-z-10 transition-transform duration-700 group-hover:scale-[1.03]" />
+              <ContentImage imageKey={b.imageKey} alt={b.imageAlt} index={i + 1} sizes="(min-width: 768px) 40vw, 85vw" className="-z-10 transition-transform duration-700 group-hover:scale-[1.03]" />
               <div className={cn(scrim, "-z-10")} />
               <div className="max-w-xl p-6 text-white sm:p-7">
                 <h2 className="font-display text-2xl font-semibold tracking-[-0.02em] sm:text-[2.125rem]">{b.title}</h2>
@@ -197,7 +198,7 @@ export function ImageTiles({ banners }: { banners: ResolvedBanner[] }) {
     <section aria-label="Explore" className="grid grid-cols-2 lg:grid-cols-4">
       {banners.map((b, i) => (
         <BannerLink key={i} banner={b} className="group relative isolate flex h-72 items-end overflow-hidden sm:h-[30rem] lg:h-[46.875rem]">
-          <ContentImage imageKey={b.imageKey} alt={b.imageAlt} index={i + 3} className="-z-10 transition-transform duration-700 group-hover:scale-[1.03]" />
+          <ContentImage imageKey={b.imageKey} alt={b.imageAlt} index={i + 3} sizes="(min-width: 1024px) 25vw, 50vw" className="-z-10 transition-transform duration-700 group-hover:scale-[1.03]" />
           <div className={cn(scrim, "-z-10")} />
           <h2 className="p-5 font-display text-xl font-semibold tracking-[-0.02em] text-white sm:p-6 sm:text-[1.75rem]">{b.title}</h2>
         </BannerLink>
@@ -227,7 +228,7 @@ function GalleryBlock({ banner, index, className }: { banner: ResolvedBanner; in
   }
   return (
     <BannerLink banner={banner} className={cn("group relative isolate block overflow-hidden rounded-xl", className)}>
-      <ContentImage imageKey={banner.imageKey} alt={banner.imageAlt} index={index} className="-z-10 transition-transform duration-700 group-hover:scale-[1.04]" />
+      <ContentImage imageKey={banner.imageKey} alt={banner.imageAlt} index={index} sizes="(min-width: 1024px) 30vw, 50vw" className="-z-10 transition-transform duration-700 group-hover:scale-[1.04]" />
       {banner.imageKey ? (
         <span className="absolute bottom-3 left-3 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-[#111] opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
           {banner.title}
@@ -299,8 +300,7 @@ export function CategoryTabs({ lead, accent, tabs }: { lead: string; accent: str
             key: t.slug,
             label: t.name,
             avatar: t.items[0]?.imageKey ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={mediaUrl(t.items[0].imageKey)} alt="" className="size-full object-cover" loading="lazy" />
+              <Image src={mediaUrl(t.items[0].imageKey)} alt="" width={64} height={64} sizes="64px" className="size-full object-cover" />
             ) : (
               <CategoryIcon slug={t.slug} name={t.name} className="size-7" />
             ),
@@ -315,7 +315,7 @@ export function CategoryTabs({ lead, accent, tabs }: { lead: string; accent: str
 export function FeatureBanner({ banner, items }: { banner: ResolvedBanner; items: ListingItem[] }) {
   return (
     <section className="relative isolate flex min-h-[38rem] flex-col justify-between overflow-hidden lg:min-h-[46.875rem]">
-      <ContentImage imageKey={banner.imageKey} alt={banner.imageAlt} index={0} className="-z-10" />
+      <ContentImage imageKey={banner.imageKey} alt={banner.imageAlt} index={0} sizes="100vw" className="-z-10" />
       <div className="absolute inset-0 -z-10 bg-gradient-to-b from-black/45 via-black/10 to-black/30" />
       <div className={cn(container, "pt-12 text-white lg:px-24")}>
         <h2 className="font-display text-4xl font-semibold tracking-[-0.035em] sm:text-[3.5rem]">{banner.title}</h2>
@@ -404,7 +404,7 @@ export function SaleBanner({
   return (
     <section className={cn(container, "pb-12")} aria-label="Current offer">
       <div className="relative isolate overflow-hidden rounded-2xl bg-[#4a4a4a] text-white">
-        {imageKey ? <ContentImage imageKey={imageKey} className="-z-10 opacity-40" /> : null}
+        {imageKey ? <ContentImage imageKey={imageKey} sizes="100vw" className="-z-10 opacity-40" /> : null}
         <div className="grid items-center gap-8 px-6 py-10 sm:px-12 lg:grid-cols-[1fr_auto_1fr]">
           <div>
             {eyebrow ? <p className="text-[0.9375rem] tracking-wide uppercase">{eyebrow}</p> : null}

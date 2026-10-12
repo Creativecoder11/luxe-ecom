@@ -3,6 +3,7 @@
 import { CheckCircle2, ImageOff, ShoppingBag, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useTransition } from "react";
+import Image from "next/image";
 import { removeMiniCartLineAction } from "@/app/(storefront)/cart/actions";
 import { Spinner } from "@/components/ui/display";
 import { formatMoney } from "@/lib/money";
@@ -16,11 +17,9 @@ function Line({ line }: { line: MiniCartLine }) {
   const [pending, startTransition] = useTransition();
   return (
     <li className={cn("relative flex gap-4 py-5 pr-8", pending && "opacity-50")}>
-      <Link href={line.href} onClick={() => cartDrawer.close()} className="block h-24 w-20 shrink-0 overflow-hidden rounded-md bg-[#f1f0ee]" tabIndex={-1} aria-hidden="true">
+      <Link href={line.href} onClick={() => cartDrawer.close()} className="relative block h-24 w-20 shrink-0 overflow-hidden rounded-md bg-[#f1f0ee]" tabIndex={-1} aria-hidden="true">
         {line.imageUrl ? (
-          // Served by our /media route with fixed headers; next/image optimisation needs sharp (not installed).
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={line.imageUrl} alt="" className="size-full object-cover" />
+          <Image src={line.imageUrl} alt="" fill sizes="80px" className="object-cover" />
         ) : (
           <span className="flex size-full items-center justify-center text-[#b9b6b1]">
             <ImageOff className="size-5" />

@@ -1,4 +1,5 @@
 import { ImageOff } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/display";
 import { formatMoney } from "@/lib/money";
@@ -42,9 +43,7 @@ export function ProductImage({ src, alt, className }: { src?: string | null; alt
   return (
     <div className={cn("relative overflow-hidden bg-[#e9e8e6]", className)}>
       {src ? (
-        // Served by our own /media route with fixed headers; next/image optimisation needs sharp (not installed).
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={alt} className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" loading="lazy" />
+        <Image src={src} alt={alt} fill sizes="(min-width: 1024px) 20vw, (min-width: 640px) 33vw, 50vw" className="object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
       ) : (
         <div className="flex size-full items-center justify-center text-[#b9b6b1]">
           <ImageOff className="size-7" aria-hidden="true" />

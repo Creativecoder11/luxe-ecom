@@ -5,13 +5,19 @@ import { ListingSkeleton } from "@/components/storefront/listing-skeleton";
 import { ListingView } from "@/components/storefront/listing-view";
 import { StorefrontPageHeader } from "@/components/storefront/page-header";
 import { parseListingParams } from "@/modules/catalog/listing-params";
-import { getStorefrontListing } from "@/modules/catalog/storefront";
+import { getStorefrontBrands, getStorefrontListing } from "@/modules/catalog/storefront";
 
 /**
- * Per-request route (no generateStaticParams): data is cached with "use cache" and products published
- * after the build work immediately. Unknown slugs render the noindex not-found page (D-020).
+ * Known brands are prerendered at build and served from the CDN (ISR); catalog edits expire them via
+ * CATALOG_TAG. Brands added after the build render on first visit, then stay cached.
+ * Unknown slugs render the noindex not-found page (D-020).
  */
 export const instant = false;
+
+export async function generateStaticParams() {
+  const brands = await getStorefrontBrands();
+  return brands.length ? brands.map((b) => ({ slug: b.slug })) : [{ slug: "__none__" }];
+}
 
 
 async function brandName(slug: string) {

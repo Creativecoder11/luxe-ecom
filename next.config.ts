@@ -42,6 +42,12 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  images: {
+    // Product and banner uploads are served by /media; the image CDN resizes them and serves WebP.
+    localPatterns: [{ pathname: "/media/**", search: "" }],
+    // Media keys are random and never reused, so optimized copies can be cached for a year.
+    minimumCacheTTL: 31_536_000,
+  },
   outputFileTracingIncludes: {
     "/media/**": ["./storage/uploads/**/*"],
   },

@@ -2,6 +2,7 @@ import { ImageOff, ShoppingBag } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import Image from "next/image";
 import { StorefrontPageHeader } from "@/components/storefront/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Alert, Card, EmptyState, Skeleton } from "@/components/ui/display";
@@ -39,10 +40,9 @@ async function Cart() {
             const label = line.variantTitle ? `${line.productTitle} (${line.variantTitle})` : line.productTitle;
             return (
               <li key={line.variantId} className="flex gap-4 py-5">
-                <Link href={`/products/${line.slug}`} className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-muted text-subtle-foreground">
+                <Link href={`/products/${line.slug}`} className="relative flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-muted text-subtle-foreground">
                   {line.imageKey ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={mediaUrl(line.imageKey)} alt="" className="size-full object-cover" />
+                    <Image src={mediaUrl(line.imageKey)} alt="" fill sizes="96px" className="object-cover" />
                   ) : (
                     <ImageOff className="size-6" aria-hidden="true" />
                   )}

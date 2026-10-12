@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { mediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils/cn";
 
@@ -24,23 +25,26 @@ export function ContentImage({
   index = 0,
   className,
   priority = false,
+  sizes = "(min-width: 768px) 50vw, 100vw",
 }: {
   imageKey: string | null | undefined;
   alt?: string;
   index?: number;
   className?: string;
   priority?: boolean;
+  /** Rendered width hint so the image CDN serves a right-sized file (see next/image `sizes`). */
+  sizes?: string;
 }) {
   if (!imageKey) return <div aria-hidden="true" className={cn("absolute inset-0", toneFor(index), className)} />;
   return (
-    // Served by our /media route with fixed headers; next/image optimisation needs sharp (not installed).
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <Image
       src={mediaUrl(imageKey)}
       alt={alt ?? ""}
+      fill
+      sizes={sizes}
       loading={priority ? "eager" : "lazy"}
       fetchPriority={priority ? "high" : undefined}
-      className={cn("absolute inset-0 size-full object-cover", className)}
+      className={cn("object-cover", className)}
     />
   );
 }

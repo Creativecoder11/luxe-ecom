@@ -15,8 +15,9 @@ export async function GET(_request: Request, { params }: RouteContext<"/media/[.
     headers: {
       "Content-Type": media.mimeType,
       "Content-Length": String(bytes.byteLength),
-      // Keys are random and never reused, so files can be cached forever.
-      "Cache-Control": "public, max-age=31536000, immutable",
+      // Keys are random and never reused, so files can be cached forever, in browsers and at the CDN edge
+      // (s-maxage lets Vercel's CDN answer repeat requests without invoking this function).
+      "Cache-Control": "public, max-age=31536000, s-maxage=31536000, immutable",
       "X-Content-Type-Options": "nosniff",
       "Content-Security-Policy": "default-src 'none'; sandbox",
       "Cross-Origin-Resource-Policy": "same-origin",

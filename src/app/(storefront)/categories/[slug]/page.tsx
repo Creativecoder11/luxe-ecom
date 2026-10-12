@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { ListingSkeleton } from "@/components/storefront/listing-skeleton";
+import { InstantListingFallback } from "@/components/storefront/instant-listing";
 import { ListingView } from "@/components/storefront/listing-view";
 import { parseListingParams } from "@/modules/catalog/listing-params";
 import { getSitemapEntries, getStorefrontListing } from "@/modules/catalog/storefront";
@@ -38,6 +38,13 @@ async function CategoryListing({ slug, searchParams }: { slug: string; searchPar
   return <ListingView listing={listing} filters={filters} basePath={`/categories/${slug}`} />;
 }
 
+/** Unfiltered listing (cached), shown in the static shell until the per-request listing streams in. */
+async function DefaultCategoryListing({ slug }: { slug: string }) {
+  const filters = parseListingParams({});
+  const listing = await getStorefrontListing({ ...filters, categorySlug: slug });
+  return listing ? <ListingView listing={listing} filters={filters} basePath={`/categories/${slug}`} /> : null;
+}
+
 export default async function CategoryPage({ params, searchParams }: PageProps<"/categories/[slug]">) {
   const { slug } = await params;
   // Existence check before anything streams so unknown categories get a real 404 (D-020).
@@ -68,7 +75,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
           {category.description ? <p className="mt-2 max-w-2xl text-muted-foreground">{category.description}</p> : null}
         </div>
       </div>
-      <Suspense fallback={<ListingSkeleton />}>
+      <Suspense fallback={<InstantListingFallback><DefaultCategoryListing slug={slug} /></InstantListingFallback>}>
         <CategoryListing slug={slug} searchParams={searchParams} />
       </Suspense>
     </>

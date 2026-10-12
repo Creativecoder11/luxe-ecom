@@ -95,8 +95,9 @@ test.describe("admin catalog", () => {
     await page.getByRole("textbox", { name: "Title", exact: true }).fill(`Test Polo ${Date.now()}`);
     await chooseCategory(page, "Men's clothing");
     await page.getByRole("textbox", { name: "Material" }).fill("Pique cotton");
-    await page.getByText("M", { exact: true }).click();
-    await page.getByText("L", { exact: true }).click();
+    // Scoped to the page body: the sidebar logo is the store initial ("L" for Luxe).
+    await page.getByRole("main").getByText("M", { exact: true }).click();
+    await page.getByRole("main").getByText("L", { exact: true }).click();
     await expect(page.getByLabel("price for M")).toBeVisible();
     await expect(page.getByLabel("price for L")).toBeVisible();
     await page.getByRole("textbox", { name: "Set price for all variants (৳)" }).fill("950");

@@ -78,6 +78,8 @@ async function PurchasePanel({ product }: { product: StorefrontProduct }) {
       currency={product.currency}
       productId={product.id}
       slug={product.slug}
+      title={product.title}
+      imageUrl={product.media[0] ? mediaUrl(product.media[0].key) : null}
       stock={stock}
       wishlisted={wishlisted}
     />

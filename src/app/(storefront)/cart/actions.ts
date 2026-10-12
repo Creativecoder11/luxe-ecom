@@ -18,7 +18,11 @@ async function currentCart() {
 
 const lineSchema = z.object({ variantId: z.string().min(1), quantity: z.coerce.number().int().min(0).max(99) });
 
-/** Adds to the cart and returns the updated mini cart, so the drawer opens without another request. */
+/**
+ * Adds to the cart and returns the updated mini cart, so the drawer opens without another request.
+ * No page refresh: the header count and drawer update from this result on the client, which keeps
+ * the response small and fast (the product page itself does not change when something is added).
+ */
 export async function addToCartAction(_prev: ActionResult<MiniCart> | null, form: FormData): Promise<ActionResult<MiniCart>> {
   const result = await runAction(
     async () => {
@@ -29,7 +33,6 @@ export async function addToCartAction(_prev: ActionResult<MiniCart> | null, form
     },
     { message: "Added to your cart." },
   );
-  if (result.ok) refresh();
   return result;
 }
 

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { ListingSkeleton } from "@/components/storefront/listing-skeleton";
+import { InstantListingFallback } from "@/components/storefront/instant-listing";
 import { ListingView } from "@/components/storefront/listing-view";
 import { StorefrontPageHeader } from "@/components/storefront/page-header";
 import { parseListingParams } from "@/modules/catalog/listing-params";
@@ -38,6 +38,13 @@ async function BrandListing({ slug, searchParams }: { slug: string; searchParams
   return <ListingView listing={listing} filters={{ ...filters, brandSlugs: [slug] }} basePath={`/brands/${slug}`} />;
 }
 
+/** Unfiltered listing (cached), shown in the static shell until the per-request listing streams in. */
+async function DefaultBrandListing({ slug }: { slug: string }) {
+  const filters = parseListingParams({});
+  const listing = await getStorefrontListing({ ...filters, brandSlugs: [slug] });
+  return listing ? <ListingView listing={listing} filters={{ ...filters, brandSlugs: [slug] }} basePath={`/brands/${slug}`} /> : null;
+}
+
 export default async function BrandPage({ params, searchParams }: PageProps<"/brands/[slug]">) {
   const { slug } = await params;
   const name = await brandName(slug);
@@ -45,7 +52,7 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
   return (
     <>
       <StorefrontPageHeader title={name} description={`Products from ${name}.`} />
-      <Suspense fallback={<ListingSkeleton />}>
+      <Suspense fallback={<InstantListingFallback><DefaultBrandListing slug={slug} /></InstantListingFallback>}>
         <BrandListing slug={slug} searchParams={searchParams} />
       </Suspense>
     </>

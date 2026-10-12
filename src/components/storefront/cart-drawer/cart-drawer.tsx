@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ImageOff, ShoppingBag, X } from "lucide-react";
+import { CheckCircle2, CircleAlert, ImageOff, ShoppingBag, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useTransition } from "react";
 import Image from "next/image";
@@ -56,7 +56,8 @@ function Line({ line }: { line: MiniCartLine }) {
   );
 }
 
-function Summary({ cart }: { cart: MiniCart }) {
+/** While an optimistic add is still saving, cart/checkout links wait (a few hundred ms) so they open the saved cart. */
+function Summary({ cart, syncing }: { cart: MiniCart; syncing: boolean }) {
   const free = cart.freeDelivery;
   return (
     <div className="border-t border-[#e8e6e2]">
@@ -83,10 +84,10 @@ function Summary({ cart }: { cart: MiniCart }) {
             </div>
           </div>
         ) : null}
-        <Link href="/cart" onClick={() => cartDrawer.close()} className="flex h-14 items-center justify-center bg-[#f5f5f5] text-[0.9375rem] font-medium hover:bg-[#ebebeb]">
+        <Link href="/cart" onClick={() => cartDrawer.close()} aria-disabled={syncing} className="flex h-14 aria-disabled:pointer-events-none aria-disabled:opacity-60 items-center justify-center bg-[#f5f5f5] text-[0.9375rem] font-medium hover:bg-[#ebebeb]">
           View cart
         </Link>
-        <Link href="/checkout" onClick={() => cartDrawer.close()} className="flex h-14 items-center justify-center bg-[#111] text-[0.9375rem] font-medium text-white hover:bg-[#2a2a2a]">
+        <Link href="/checkout" onClick={() => cartDrawer.close()} aria-disabled={syncing} className="flex h-14 aria-disabled:pointer-events-none aria-disabled:opacity-60 items-center justify-center bg-[#111] text-[0.9375rem] font-medium text-white hover:bg-[#2a2a2a]">
           Checkout
         </Link>
       </div>
@@ -96,7 +97,7 @@ function Summary({ cart }: { cart: MiniCart }) {
 
 /** Slide-in cart opened after "Add to cart" (and from the header cart icon). One instance per page. */
 export function CartDrawer() {
-  const { open, cart, notice, loading } = useCartDrawer();
+  const { open, cart, notice, error, loading, syncing } = useCartDrawer();
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -128,7 +129,15 @@ export function CartDrawer() {
             </button>
           </div>
 
-          {notice ? (
+          {error ? (
+            <p role="alert" className="flex items-center gap-2 border-b border-[#e8e6e2] bg-danger-soft px-6 py-2.5 text-sm text-danger">
+              <CircleAlert className="size-4 shrink-0" aria-hidden="true" /> {error}
+            </p>
+          ) : syncing ? (
+            <p role="status" className="flex items-center gap-2 border-b border-[#e8e6e2] bg-[#f7f7f5] px-6 py-2.5 text-sm text-[#55524c]">
+              <span className="size-4 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" /> Adding to your cart…
+            </p>
+          ) : notice ? (
             <p role="status" className="flex items-center gap-2 border-b border-[#e8e6e2] bg-[#f3faf5] px-6 py-2.5 text-sm text-[#157f3c]">
               <CheckCircle2 className="size-4" aria-hidden="true" /> {notice}
             </p>
@@ -156,7 +165,7 @@ export function CartDrawer() {
             )}
           </div>
 
-          {cart && cart.lines.length ? <Summary cart={cart} /> : null}
+          {cart && cart.lines.length ? <Summary cart={cart} syncing={syncing} /> : null}
         </div>
       ) : null}
     </dialog>

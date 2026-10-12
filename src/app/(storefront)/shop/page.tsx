@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { ListingSkeleton } from "@/components/storefront/listing-skeleton";
+import { InstantListingFallback } from "@/components/storefront/instant-listing";
 import { ListingView } from "@/components/storefront/listing-view";
 import { StorefrontPageHeader } from "@/components/storefront/page-header";
 import { parseListingParams } from "@/modules/catalog/listing-params";
@@ -15,11 +15,18 @@ async function ShopListing({ searchParams }: Pick<PageProps<"/shop">, "searchPar
   return <ListingView listing={listing} filters={filters} basePath="/shop" />;
 }
 
+/** Unfiltered listing from cached data: part of the static shell, so /shop shows products instantly. */
+async function DefaultShopListing() {
+  const filters = parseListingParams({});
+  const listing = await getStorefrontListing(filters);
+  return listing ? <ListingView listing={listing} filters={filters} basePath="/shop" /> : null;
+}
+
 export default function ShopPage({ searchParams }: PageProps<"/shop">) {
   return (
     <>
       <StorefrontPageHeader title="Shop all" description="Every published product across all categories." />
-      <Suspense fallback={<ListingSkeleton />}>
+      <Suspense fallback={<InstantListingFallback><DefaultShopListing /></InstantListingFallback>}>
         <ShopListing searchParams={searchParams} />
       </Suspense>
     </>

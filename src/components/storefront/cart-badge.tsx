@@ -5,23 +5,12 @@ import { readCartToken } from "@/modules/cart/cart-cookie";
 import { getCartItemCount } from "@/modules/cart/cart.service";
 import { cn } from "@/lib/utils/cn";
 import { CartTrigger } from "./cart-drawer/cart-trigger";
+import { LiveCount } from "./cart-drawer/live-count";
 
 async function Count({ tone }: { tone: "light" | "dark" }) {
   const token = await readCartToken();
-  if (!token) return null;
-  const count = await getCartItemCount(await getBusinessId(), token);
-  if (count === 0) return null;
-  return (
-    <span
-      className={cn(
-        "absolute -top-0.5 -right-0.5 flex min-w-5 items-center justify-center rounded-full px-1 text-[0.6875rem] font-semibold",
-        tone === "dark" ? "bg-white text-[#111]" : "bg-primary text-primary-foreground",
-      )}
-      aria-label={`${count} items in cart`}
-    >
-      {count > 99 ? "99+" : count}
-    </span>
-  );
+  const count = token ? await getCartItemCount(await getBusinessId(), token) : 0;
+  return <LiveCount serverCount={count} tone={tone} />;
 }
 
 /** Cart link with a live item count (cookie read inside Suspense keeps pages prerenderable). */
@@ -34,7 +23,7 @@ export function CartBadge({ tone = "light" }: { tone?: "light" | "dark" }) {
       )}
     >
       <ShoppingCart className="size-[1.375rem]" strokeWidth={1.8} />
-      <Suspense fallback={null}>
+      <Suspense fallback={<LiveCount serverCount={0} tone={tone} />}>
         <Count tone={tone} />
       </Suspense>
     </CartTrigger>

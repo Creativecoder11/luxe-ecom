@@ -43,8 +43,10 @@ test("guest buys with a coupon and Cash on Delivery; staff see the order", async
   await admin.goto(`/admin/orders?q=${number}`);
   await expect(admin.getByRole("link", { name: number })).toBeVisible();
   await admin.getByRole("link", { name: number }).click();
-  await expect(admin.getByText("Awaiting confirmation").first()).toBeVisible();
-  await expect(admin.getByText("Cash on Delivery · not yet paid")).toBeVisible();
+  await expect(admin).toHaveURL(/\/admin\/orders\/[^/?]+$/);
+  // The list page stays mounted (hidden) after navigating, and its filters contain the same labels.
+  await expect(admin.getByText("Awaiting confirmation").filter({ visible: true }).first()).toBeVisible();
+  await expect(admin.getByText("Cash on Delivery · not yet paid").filter({ visible: true })).toBeVisible();
   await admin.context().close();
 });
 
@@ -114,7 +116,7 @@ test("add to cart opens the cart drawer with the product image, subtotal and fre
   await expect(drawer.getByText("Added to your cart.")).toBeVisible();
   const items = drawer.getByRole("list", { name: "Cart items" });
   await expect(items.getByRole("link", { name: "Hydrating Face Serum 30 ml" })).toBeVisible();
-  await expect(items.locator('img[src^="/media/products/"]')).toBeVisible(); // sample photo
+  await expect(items.locator('img[src*="%2Fmedia%2Fproducts%2F"]')).toBeVisible(); // sample photo, via next/image
   await expect(drawer).toContainText("Subtotal:");
   await expect(drawer).toContainText("৳1,250.00");
   // Seeded "Rest of Bangladesh (sample)" zone: free delivery from ৳5,000 → ৳3,750 to go.

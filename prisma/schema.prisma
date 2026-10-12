@@ -1,0 +1,1272 @@
+// Unified Commerce Platform: database schema.
+// Conventions (docs/ARCHITECTURE.md §3):
+//   - cuid string ids, createdAt/updatedAt on every table
+//   - money in integer minor units + ISO currency column (D-005)
+//   - businessId on aggregate roots (D-001, single business; tenant-ready, not multi-tenant)
+//   - tables mapped to snake_case plural names
+// Models are added gate by gate; Gate 1 contains only the platform foundation.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Business {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  legalName   String?
+  countryCode String   @default("BD") @db.Char(2)
+  currency    String   @default("BDT") @db.Char(3)
+  timezone    String   @default("Asia/Dhaka")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  settings       BusinessSettings?
+  auditLogs      AuditLog[]
+  outboxEvents   OutboxEvent[]
+  roles          Role[]
+  staffMembers   StaffMember[]
+  attributes     AttributeDefinition[]
+  categories     Category[]
+  brands         Brand[]
+  products       Product[]
+  variants       ProductVariant[]
+  priceLists     PriceList[]
+  taxClasses     TaxClass[]
+  shippingZones  ShippingZone[]
+  warehouses     Warehouse[]
+  stockMovements StockMovement[]
+  suppliers      Supplier[]
+  purchaseOrders PurchaseOrder[]
+  goodsReceipts  GoodsReceipt[]
+  sequences      DocumentSequence[]
+  customers      Customer[]
+  carts          Cart[]
+  coupons        Coupon[]
+  orders         Order[]
+  content        StorefrontContent?
+  contentMedia   ContentMedia[]
+  subscribers    NewsletterSubscriber[]
+
+  @@map("businesses")
+}
+
+model BusinessSettings {
+  businessId            String   @id
+  storeName             String
+  supportEmail          String?
+  supportPhone          String?
+  defaultLocale         String   @default("en")
+  guestCheckoutEnabled  Boolean  @default(true)
+  /// Owner-configured VAT (D-028): whether catalog prices already include VAT, and the BIN for invoices.
+  pricesIncludeTax      Boolean  @default(true)
+  vatRegistrationNumber String?
+  /// Owner-configured Cash on Delivery (D-030): on across Bangladesh by default.
+  codEnabled            Boolean  @default(true)
+  codMaxOrderMinor      Int?
+  /// Default reorder level for variants without their own threshold.
+  lowStockThreshold     Int      @default(5)
+  updatedAt             DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("business_settings")
+}
+
+enum ActorType {
+  STAFF
+  CUSTOMER
+  SYSTEM
+}
+
+/// Append-only. UPDATE and DELETE are rejected by a database trigger (see migration).
+model AuditLog {
+  id            String    @id @default(cuid())
+  businessId    String
+  actorType     ActorType
+  actorId       String?
+  action        String
+  entityType    String
+  entityId      String?
+  reason        String?
+  before        Json?
+  after         Json?
+  ipAddress     String?
+  userAgent     String?
+  correlationId String?
+  createdAt     DateTime  @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, entityType, entityId, createdAt])
+  @@index([businessId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("audit_logs")
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  DEAD
+}
+
+/// Transactional outbox: written in the same transaction as the business change,
+/// delivered asynchronously by the job worker (D-004).
+model OutboxEvent {
+  id             String       @id @default(cuid())
+  businessId     String
+  type           String
+  payload        Json
+  status         OutboxStatus @default(PENDING)
+  attempts       Int          @default(0)
+  maxAttempts    Int          @default(8)
+  availableAt    DateTime     @default(now())
+  lastError      String?
+  idempotencyKey String       @unique
+  processedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([status, availableAt])
+  @@index([businessId, type, createdAt])
+  @@map("outbox_events")
+}
+
+// ---------------------------------------------------------------------------
+// Identity (Gate 2). User/Session/Account/Verification follow the Better Auth
+// core schema; kind/status/phone/mustChangePassword are server-controlled fields.
+// ---------------------------------------------------------------------------
+
+enum UserKind {
+  STAFF
+  CUSTOMER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+model User {
+  id                 String     @id
+  name               String
+  email              String     @unique
+  emailVerified      Boolean    @default(false)
+  image              String?
+  kind               UserKind   @default(CUSTOMER)
+  status             UserStatus @default(ACTIVE)
+  /// Normalized E.164 (see src/lib/phone.ts).
+  phone              String?
+  mustChangePassword Boolean    @default(false)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  sessions    Session[]
+  accounts    Account[]
+  staffMember StaffMember?
+  customer    Customer?
+  wishlist    WishlistItem[]
+
+  @@index([kind, createdAt])
+  @@map("users")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  /// Scrypt hash (credential provider only). Never logged or returned.
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+// ---------------------------------------------------------------------------
+// Access control (Gate 2). Permission keys are defined in code
+// (src/modules/identity/permissions.ts) and validated on every write.
+// ---------------------------------------------------------------------------
+
+model Role {
+  id          String   @id @default(cuid())
+  businessId  String
+  key         String
+  name        String
+  description String?
+  /// System roles are seeded from the permission matrix; the owner role cannot be edited.
+  isSystem    Boolean  @default(false)
+  permissions String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  staff    StaffMember[]
+
+  @@unique([businessId, key])
+  @@map("roles")
+}
+
+enum StaffStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model StaffMember {
+  id          String      @id @default(cuid())
+  businessId  String
+  userId      String      @unique
+  roleId      String
+  status      StaffStatus @default(ACTIVE)
+  jobTitle    String?
+  createdById String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  role     Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, status])
+  @@map("staff_members")
+}
+
+/// Fixed-window rate limiting shared by all app instances (D-023).
+model RateLimitBucket {
+  key         String   @id
+  windowStart DateTime
+  count       Int
+
+  @@index([windowStart])
+  @@map("rate_limit_buckets")
+}
+
+// ---------------------------------------------------------------------------
+// Catalog (Gate 2). Category-agnostic: attributes are data (AttributeDefinition)
+// attached to categories through templates (CategoryAttribute), so cosmetics,
+// apparel and gadgets need no schema changes (PRD §18).
+// ---------------------------------------------------------------------------
+
+enum AttributeType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  SELECT
+  MULTI_SELECT
+}
+
+model AttributeDefinition {
+  id            String        @id @default(cuid())
+  businessId    String
+  /// Stable machine code, e.g. "shade", "size", "warranty_months". Immutable once used.
+  code          String
+  label         String
+  type          AttributeType
+  unit          String?
+  helpText      String?
+  /// Usable as a variant axis (SELECT only): each option can become its own SKU.
+  isVariantAxis Boolean       @default(false)
+  isFilterable  Boolean       @default(false)
+  isSearchable  Boolean       @default(false)
+  /// { min?, max?, integer?, maxLength? } validated in src/modules/catalog/attributes.ts
+  validation    Json?
+  archivedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  business      Business                @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  options       AttributeOption[]
+  categories    CategoryAttribute[]
+  productValues ProductAttributeValue[]
+  variantValues VariantOptionValue[]
+
+  @@unique([businessId, code])
+  @@map("attribute_definitions")
+}
+
+model AttributeOption {
+  id          String    @id @default(cuid())
+  attributeId String
+  /// Slug-like value, unique within the attribute.
+  value       String
+  label       String
+  /// Optional swatch for colors and shades.
+  colorHex    String?
+  sortOrder   Int       @default(0)
+  archivedAt  DateTime?
+
+  attribute     AttributeDefinition     @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  productValues ProductAttributeValue[]
+  variantValues VariantOptionValue[]
+
+  @@unique([attributeId, value])
+  @@index([attributeId, sortOrder])
+  @@map("attribute_options")
+}
+
+enum CategoryStatus {
+  ACTIVE
+  HIDDEN
+}
+
+/// Where traceability is required: BATCH_EXPIRY (cosmetics, food), SERIAL (gadgets with IMEI/serial).
+enum TrackingMode {
+  NONE
+  BATCH_EXPIRY
+  SERIAL
+}
+
+model Category {
+  id                  String         @id @default(cuid())
+  businessId          String
+  parentId            String?
+  slug                String
+  name                String
+  description         String?
+  status              CategoryStatus @default(ACTIVE)
+  sortOrder           Int            @default(0)
+  defaultTrackingMode TrackingMode   @default(NONE)
+  seoTitle            String?
+  seoDescription      String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  business          Business            @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  parent            Category?           @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children          Category[]          @relation("CategoryTree")
+  attributes        CategoryAttribute[]
+  primaryProducts   Product[]           @relation("PrimaryCategory")
+  productCategories ProductCategory[]
+
+  @@unique([businessId, slug])
+  @@index([businessId, parentId, sortOrder])
+  @@map("categories")
+}
+
+/// Category attribute template: which attributes apply to products in a category.
+model CategoryAttribute {
+  categoryId  String
+  attributeId String
+  isRequired  Boolean @default(false)
+  sortOrder   Int     @default(0)
+
+  category  Category            @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  attribute AttributeDefinition @relation(fields: [attributeId], references: [id], onDelete: Restrict)
+
+  @@id([categoryId, attributeId])
+  @@map("category_attributes")
+}
+
+enum BrandStatus {
+  ACTIVE
+  HIDDEN
+}
+
+model Brand {
+  id          String      @id @default(cuid())
+  businessId  String
+  slug        String
+  name        String
+  description String?
+  status      BrandStatus @default(ACTIVE)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  products Product[]
+
+  @@unique([businessId, slug])
+  @@map("brands")
+}
+
+model TaxClass {
+  id              String  @id @default(cuid())
+  businessId      String
+  code            String
+  name            String
+  /// 1500 = 15%. Prices are tax-inclusive until the tax policy decision (REQUIREMENTS_REVIEW §3).
+  rateBasisPoints Int     @default(0)
+  isDefault       Boolean @default(false)
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  products Product[]
+
+  @@unique([businessId, code])
+  @@map("tax_classes")
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum ProductType {
+  SIMPLE
+  VARIANT
+}
+
+model Product {
+  id                 String        @id @default(cuid())
+  businessId         String
+  slug               String
+  title              String
+  description        String        @default("")
+  brandId            String?
+  primaryCategoryId  String
+  taxClassId         String?
+  productType        ProductType   @default(SIMPLE)
+  status             ProductStatus @default(DRAFT)
+  trackingMode       TrackingMode  @default(NONE)
+  /// Product code used to suggest variant SKUs.
+  baseSku            String?
+  returnPolicyNote   String?
+  seoTitle           String?
+  seoDescription     String?
+  /// Denormalized lowest active RETAIL price (and its compare-at) for listing sort/filter;
+  /// maintained by the product service in the same transaction as variant/price changes.
+  priceFromMinor     Int?
+  compareAtFromMinor Int?
+  /// First publication; kept when unpublished so "never published" drafts can be deleted safely.
+  firstPublishedAt   DateTime?
+  publishedAt        DateTime?
+  archivedAt         DateTime?
+  createdById        String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  business        Business                @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brand           Brand?                  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  primaryCategory Category                @relation("PrimaryCategory", fields: [primaryCategoryId], references: [id], onDelete: Restrict)
+  taxClass        TaxClass?               @relation(fields: [taxClassId], references: [id], onDelete: Restrict)
+  categories      ProductCategory[]
+  attributeValues ProductAttributeValue[]
+  variants        ProductVariant[]
+  media           ProductMedia[]
+  wishlistedBy    WishlistItem[]
+
+  @@unique([businessId, slug])
+  @@index([businessId, status, publishedAt])
+  @@index([businessId, status, priceFromMinor])
+  @@index([primaryCategoryId, status])
+  @@index([brandId, status])
+  @@map("products")
+}
+
+/// Additional categories (the primary category is on Product).
+model ProductCategory {
+  productId  String
+  categoryId String
+
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@id([productId, categoryId])
+  @@index([categoryId])
+  @@map("product_categories")
+}
+
+/// One row per value; MULTI_SELECT stores one row per selected option.
+model ProductAttributeValue {
+  id           String    @id @default(cuid())
+  productId    String
+  attributeId  String
+  textValue    String?
+  numberValue  Decimal?  @db.Decimal(18, 4)
+  dateValue    DateTime? @db.Date
+  booleanValue Boolean?
+  optionId     String?
+
+  product   Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  attribute AttributeDefinition @relation(fields: [attributeId], references: [id], onDelete: Restrict)
+  option    AttributeOption?    @relation(fields: [optionId], references: [id], onDelete: Restrict)
+
+  @@index([productId])
+  @@index([attributeId, optionId])
+  @@index([attributeId, numberValue])
+  @@map("product_attribute_values")
+}
+
+model ProductVariant {
+  id                String   @id @default(cuid())
+  businessId        String
+  productId         String
+  sku               String
+  barcode           String?
+  title             String
+  /// Stable identity of the option combination (see src/modules/catalog/variants.ts).
+  combinationKey    String
+  isActive          Boolean  @default(true)
+  position          Int      @default(0)
+  weightGrams       Int?
+  /// Latest known unit cost in minor units (moving weighted average, D-016).
+  costMinor         Int?
+  /// false for items whose stock is not counted (e.g. made to order); they are never out of stock.
+  trackInventory    Boolean  @default(true)
+  /// Reorder level; null uses the business default.
+  lowStockThreshold Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  business          Business             @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  product           Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  options           VariantOptionValue[]
+  prices            VariantPrice[]
+  media             ProductMedia[]
+  stock             StockBalance[]
+  movements         StockMovement[]
+  purchaseItems     PurchaseOrderItem[]
+  receiptItems      GoodsReceiptItem[]
+  cartItems         CartItem[]
+  orderItems        OrderItem[]
+  stockReservations StockReservation[]
+
+  @@unique([businessId, sku])
+  @@unique([businessId, barcode])
+  @@unique([productId, combinationKey])
+  @@index([productId, position])
+  @@map("product_variants")
+}
+
+model VariantOptionValue {
+  variantId   String
+  attributeId String
+  optionId    String
+
+  variant   ProductVariant      @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  attribute AttributeDefinition @relation(fields: [attributeId], references: [id], onDelete: Restrict)
+  option    AttributeOption     @relation(fields: [optionId], references: [id], onDelete: Restrict)
+
+  @@id([variantId, attributeId])
+  @@index([attributeId, optionId])
+  @@map("variant_option_values")
+}
+
+model PriceList {
+  id         String   @id @default(cuid())
+  businessId String
+  /// "RETAIL" is the storefront list; "WHOLESALE" lists arrive in Release 2.
+  code       String
+  name       String
+  currency   String   @default("BDT") @db.Char(3)
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  business Business       @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  prices   VariantPrice[]
+
+  @@unique([businessId, code])
+  @@map("price_lists")
+}
+
+model VariantPrice {
+  id             String   @id @default(cuid())
+  priceListId    String
+  variantId      String
+  /// Selling price in minor units (tax-inclusive until the tax policy is decided).
+  amountMinor    Int
+  /// "Was" price for sale display; must be greater than amountMinor when set.
+  compareAtMinor Int?
+  updatedAt      DateTime @updatedAt
+
+  priceList PriceList      @relation(fields: [priceListId], references: [id], onDelete: Restrict)
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([priceListId, variantId])
+  @@index([priceListId, amountMinor])
+  @@map("variant_prices")
+}
+
+model ProductMedia {
+  id         String   @id @default(cuid())
+  productId  String
+  variantId  String?
+  /// Key in the storage driver; never a user-supplied path.
+  storageKey String   @unique
+  mimeType   String
+  sizeBytes  Int
+  width      Int?
+  height     Int?
+  alt        String?
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([productId, sortOrder])
+  @@map("product_media")
+}
+
+// ---------------------------------------------------------------------------
+// Delivery (Gate 3, D-029/D-030): owner-configured zones of districts.
+// ---------------------------------------------------------------------------
+
+model ShippingZone {
+  id                         String   @id @default(cuid())
+  businessId                 String
+  name                       String
+  /// District codes from src/lib/bd-geo.ts. Ignored for the fallback zone.
+  districts                  String[]
+  /// Catch-all for districts not in any other active zone ("rest of Bangladesh").
+  isFallback                 Boolean  @default(false)
+  baseFeeMinor               Int
+  includedWeightGrams        Int      @default(1000)
+  extraPerKgMinor            Int      @default(0)
+  freeShippingThresholdMinor Int?
+  codEnabled                 Boolean  @default(true)
+  codFeeMinor                Int      @default(0)
+  /// Shown at checkout, e.g. "1–2 days".
+  estimate                   String?
+  isActive                   Boolean  @default(true)
+  sortOrder                  Int      @default(0)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, isActive])
+  @@map("shipping_zones")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory (Gate 3). StockBalance is a materialized aggregate of the append-only
+// StockMovement ledger, updated in the same transaction (ARCHITECTURE §3).
+// ---------------------------------------------------------------------------
+
+model Warehouse {
+  id         String   @id @default(cuid())
+  businessId String
+  code       String
+  name       String
+  address    String?
+  isDefault  Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  business       Business           @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  balances       StockBalance[]
+  movements      StockMovement[]
+  reservations   StockReservation[]
+  purchaseOrders PurchaseOrder[]
+  receipts       GoodsReceipt[]
+
+  @@unique([businessId, code])
+  @@map("warehouses")
+}
+
+model StockBalance {
+  id          String   @id @default(cuid())
+  warehouseId String
+  variantId   String
+  onHand      Int      @default(0)
+  reserved    Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@unique([warehouseId, variantId])
+  @@index([variantId])
+  @@map("stock_balances")
+}
+
+enum StockMovementType {
+  OPENING_BALANCE
+  RECEIPT
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  DAMAGE
+  RESERVE
+  RELEASE
+  SALE
+  RETURN_RESTOCK
+}
+
+enum ActorKind {
+  STAFF
+  CUSTOMER
+  SYSTEM
+}
+
+/// Append-only ledger: UPDATE/DELETE rejected by a database trigger.
+model StockMovement {
+  id            String            @id @default(cuid())
+  businessId    String
+  warehouseId   String
+  variantId     String
+  type          StockMovementType
+  /// Change to on-hand units (negative for outflows; 0 for reserve/release).
+  onHandDelta   Int
+  /// Change to reserved units.
+  reservedDelta Int               @default(0)
+  onHandAfter   Int
+  reservedAfter Int
+  reason        String?
+  note          String?
+  unitCostMinor Int?
+  /// e.g. "GoodsReceipt", "Order", "Adjustment"
+  sourceType    String?
+  sourceId      String?
+  actorType     ActorKind
+  actorId       String?
+  createdAt     DateTime          @default(now())
+
+  business  Business       @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@index([variantId, createdAt])
+  @@index([businessId, createdAt])
+  @@index([sourceType, sourceId])
+  @@map("stock_movements")
+}
+
+/// Gap-free document numbers (PO, GRN, orders…), incremented atomically.
+model DocumentSequence {
+  businessId String
+  key        String
+  nextValue  Int    @default(1)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@id([businessId, key])
+  @@map("document_sequences")
+}
+
+// ---------------------------------------------------------------------------
+// Purchasing (Gate 3)
+// ---------------------------------------------------------------------------
+
+model Supplier {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  address     String?
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business       Business        @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  purchaseOrders PurchaseOrder[]
+
+  @@index([businessId, isActive])
+  @@map("suppliers")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id          String              @id @default(cuid())
+  businessId  String
+  number      String
+  supplierId  String
+  warehouseId String
+  status      PurchaseOrderStatus @default(DRAFT)
+  expectedAt  DateTime?
+  notes       String?
+  createdById String?
+  orderedAt   DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  business  Business            @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  supplier  Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  warehouse Warehouse           @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  items     PurchaseOrderItem[]
+  receipts  GoodsReceipt[]
+
+  @@unique([businessId, number])
+  @@index([businessId, status, createdAt])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               String @id @default(cuid())
+  purchaseOrderId  String
+  variantId        String
+  quantityOrdered  Int
+  quantityReceived Int    @default(0)
+  unitCostMinor    Int
+
+  purchaseOrder PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  variant       ProductVariant     @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  receiptItems  GoodsReceiptItem[]
+
+  @@unique([purchaseOrderId, variantId])
+  @@map("purchase_order_items")
+}
+
+model GoodsReceipt {
+  id              String   @id @default(cuid())
+  businessId      String
+  number          String
+  purchaseOrderId String?
+  warehouseId     String
+  notes           String?
+  receivedById    String?
+  receivedAt      DateTime @default(now())
+
+  business      Business           @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  purchaseOrder PurchaseOrder?     @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  warehouse     Warehouse          @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  items         GoodsReceiptItem[]
+
+  @@unique([businessId, number])
+  @@index([businessId, receivedAt])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptItem {
+  id                  String  @id @default(cuid())
+  receiptId           String
+  variantId           String
+  purchaseOrderItemId String?
+  quantity            Int
+  unitCostMinor       Int
+
+  receipt           GoodsReceipt       @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  variant           ProductVariant     @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  purchaseOrderItem PurchaseOrderItem? @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Restrict)
+
+  @@map("goods_receipt_items")
+}
+
+// ---------------------------------------------------------------------------
+// Customers (Gate 3 minimal; CRM extends this in Gate 5). One customer per
+// normalized BD mobile number per business (FR-CRM-01 dedup key).
+// ---------------------------------------------------------------------------
+
+enum CustomerType {
+  RETAIL
+  WHOLESALE
+}
+
+model Customer {
+  id         String       @id @default(cuid())
+  businessId String
+  /// Linked account, if the customer registered.
+  userId     String?      @unique
+  name       String
+  phoneE164  String
+  email      String?
+  type       CustomerType @default(RETAIL)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  business          Business           @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  user              User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  addresses         CustomerAddress[]
+  orders            Order[]
+  couponRedemptions CouponRedemption[]
+
+  @@unique([businessId, phoneE164])
+  @@index([businessId, createdAt])
+  @@map("customers")
+}
+
+model CustomerAddress {
+  id            String   @id @default(cuid())
+  customerId    String
+  label         String?
+  recipientName String
+  phoneE164     String
+  division      String
+  /// District code (src/lib/bd-geo.ts)
+  district      String
+  upazila       String
+  area          String?
+  addressLine   String
+  postcode      String?
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_addresses")
+}
+
+// ---------------------------------------------------------------------------
+// Cart, wishlist, coupons (Gate 3). Carts hold quantities only; prices are always
+// recomputed server-side from the catalog.
+// ---------------------------------------------------------------------------
+
+model Cart {
+  id         String   @id @default(cuid())
+  businessId String
+  /// Random token stored in an httpOnly cookie (guest and signed-in carts alike).
+  token      String   @unique
+  userId     String?
+  couponCode String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  items    CartItem[]
+
+  @@index([userId])
+  @@index([updatedAt])
+  @@map("carts")
+}
+
+model CartItem {
+  cartId    String
+  variantId String
+  quantity  Int
+  addedAt   DateTime @default(now())
+
+  cart    Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@id([cartId, variantId])
+  @@map("cart_items")
+}
+
+model WishlistItem {
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([userId, productId])
+  @@map("wishlist_items")
+}
+
+enum CouponType {
+  PERCENT
+  FIXED
+  FREE_SHIPPING
+}
+
+model Coupon {
+  id                 String     @id @default(cuid())
+  businessId         String
+  /// Stored upper-case; matched case-insensitively.
+  code               String
+  description        String?
+  type               CouponType
+  percentBasisPoints Int?
+  amountMinor        Int?
+  maxDiscountMinor   Int?
+  minSubtotalMinor   Int?
+  startsAt           DateTime?
+  endsAt             DateTime?
+  usageLimit         Int?
+  perCustomerLimit   Int?
+  timesUsed          Int        @default(0)
+  isActive           Boolean    @default(true)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  business    Business           @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  redemptions CouponRedemption[]
+
+  @@unique([businessId, code])
+  @@map("coupons")
+}
+
+model CouponRedemption {
+  id            String   @id @default(cuid())
+  couponId      String
+  orderId       String   @unique
+  customerId    String
+  discountMinor Int
+  createdAt     DateTime @default(now())
+
+  coupon   Coupon   @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@index([couponId, customerId])
+  @@map("coupon_redemptions")
+}
+
+// ---------------------------------------------------------------------------
+// Orders (Gate 3 creation; Gate 4 OMS workflows). Order, payment, fulfilment and
+// shipment statuses are separate state machines (D-006, SRS §9).
+// ---------------------------------------------------------------------------
+
+enum OrderSource {
+  WEBSITE
+  FACEBOOK_MANUAL
+  PHONE
+  POS
+  WHOLESALE
+  OTHER
+}
+
+enum OrderStatus {
+  DRAFT
+  PENDING_CONFIRMATION
+  CONFIRMED
+  PROCESSING
+  PACKED
+  SHIPPED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  DELIVERY_FAILED
+  RETURN_REQUESTED
+  RETURN_APPROVED
+  RETURNED
+  PARTIALLY_RETURNED
+}
+
+enum PaymentMethod {
+  COD
+}
+
+enum PaymentStatus {
+  COD_UNPAID
+  COD_COLLECTION_PENDING
+  COD_COLLECTED
+  REMITTED
+  FAILED_COLLECTION
+  VOID
+}
+
+model Order {
+  id               String        @id @default(cuid())
+  businessId       String
+  number           String
+  /// Unguessable token for the customer's confirmation link (never the order id or number).
+  publicToken      String        @unique
+  source           OrderSource
+  status           OrderStatus
+  paymentMethod    PaymentMethod
+  paymentStatus    PaymentStatus
+  customerId       String
+  /// Immutable snapshots (FR-ORD-02)
+  contactName      String
+  contactPhoneE164 String
+  contactEmail     String?
+  shippingAddress  Json
+  shippingZoneName String?
+  currency         String        @default("BDT") @db.Char(3)
+  subtotalMinor    Int
+  discountMinor    Int           @default(0)
+  shippingMinor    Int           @default(0)
+  codFeeMinor      Int           @default(0)
+  taxMinor         Int           @default(0)
+  pricesIncludeTax Boolean
+  totalMinor       Int
+  couponCode       String?
+  customerNote     String?
+  /// Prevents duplicate orders from double submits and retries.
+  idempotencyKey   String        @unique
+  placedByUserId   String?
+  placedAt         DateTime      @default(now())
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  business         Business             @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  customer         Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items            OrderItem[]
+  history          OrderStatusHistory[]
+  payments         Payment[]
+  reservations     StockReservation[]
+  couponRedemption CouponRedemption?
+
+  @@unique([businessId, number])
+  @@index([businessId, status, createdAt])
+  @@index([businessId, source, createdAt])
+  @@index([customerId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                 String  @id @default(cuid())
+  orderId            String
+  variantId          String?
+  productId          String?
+  /// Snapshots: the catalog may change later; the order never does.
+  productTitle       String
+  variantTitle       String
+  sku                String
+  options            Json
+  unitPriceMinor     Int
+  quantity           Int
+  discountMinor      Int     @default(0)
+  taxRateBasisPoints Int     @default(0)
+  taxMinor           Int     @default(0)
+  lineTotalMinor     Int
+  /// Unit cost snapshot for gross-profit reporting (D-016); set at order time from the moving average.
+  unitCostMinor      Int?
+
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([variantId])
+  @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id         String       @id @default(cuid())
+  orderId    String
+  fromStatus OrderStatus?
+  toStatus   OrderStatus
+  actorType  ActorKind
+  actorId    String?
+  note       String?
+  createdAt  DateTime     @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  orderId     String
+  method      PaymentMethod
+  status      PaymentStatus
+  amountMinor Int
+  collectedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@map("payments")
+}
+
+enum ReservationStatus {
+  ACTIVE
+  RELEASED
+  CONSUMED
+}
+
+model StockReservation {
+  id          String            @id @default(cuid())
+  orderId     String
+  variantId   String
+  warehouseId String
+  quantity    Int
+  status      ReservationStatus @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  closedAt    DateTime?
+
+  order     Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([variantId, status])
+  @@map("stock_reservations")
+}
+
+// ---------------------------------------------------------------------------
+// Storefront content (D-035): homepage sections edited in Admin → Homepage settings.
+// ---------------------------------------------------------------------------
+
+/// One document per business, validated by src/modules/content/schema.ts on every read and write.
+model StorefrontContent {
+  businessId  String   @id
+  data        Json
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("storefront_content")
+}
+
+/// Images uploaded for banners and sections. Content documents may only reference keys listed here.
+model ContentMedia {
+  id           String   @id @default(cuid())
+  businessId   String
+  storageKey   String   @unique
+  mimeType     String
+  sizeBytes    Int
+  width        Int?
+  height       Int?
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, createdAt])
+  @@map("content_media")
+}
+
+/// Footer newsletter sign-ups. Stored only; nothing is sent until an email provider exists (Gate 6).
+model NewsletterSubscriber {
+  id             String    @id @default(cuid())
+  businessId     String
+  email          String
+  source         String    @default("footer")
+  unsubscribedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, email])
+  @@map("newsletter_subscribers")
+}

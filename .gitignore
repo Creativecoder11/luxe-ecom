@@ -52,8 +52,10 @@ next-env.d.ts
 /blob-report/
 /playwright/.cache/
 
-# local file storage (development driver)
-/storage/
+# local file storage (allow uploads so seeded catalog images deploy to Vercel)
+# /storage/
+!/storage/uploads/
+
 
 # playwright auth state
 /playwright/.auth/

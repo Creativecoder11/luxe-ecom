@@ -42,6 +42,9 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  outputFileTracingIncludes: {
+    "/media/**": ["./storage/uploads/**/*"],
+  },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },

@@ -13,9 +13,8 @@ function createClient(): PrismaClient {
 /** Single PrismaClient per process (reused across dev hot reloads). Only module services may import this. */
 export const db: PrismaClient = globalForDb.__ucpDb ?? createClient();
 
-if (process.env.NODE_ENV !== "production") {
-  globalForDb.__ucpDb = db;
-}
+globalForDb.__ucpDb = db;
+
 
 /**
  * Interactive-transaction budget for multi-step business writes (checkout, goods receipt,
